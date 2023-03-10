@@ -15,7 +15,7 @@ Transform:
 # Metadata to use for the publishing to the SAR
 Metadata:
   AWS::ServerlessRepo::Application:
-    Name: thetis-ims-gls-transport
+    Name: thetis-ims-bring-transport
     Description: Application for integrating Thetis IMS with the freight carrier Bring.
     Author: thetis-apps
     SpdxLicenseId: Apache-2.0

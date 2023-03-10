@@ -19,19 +19,24 @@ const axios = require('axios');
 var AWS = require('aws-sdk');
 AWS.config.update({region:'eu-west-1'});
 
-function createBringAddress(address, contactPerson) {
-	var glsAddress = new Object(); 
+function createBringAddress(address, contactPerson, notes, reference) {
+	let bringAddress = new Object(); 
 	if (contactPerson != null) {
-		glsAddress.contact = contactPerson.name;
-		glsAddress.email = contactPerson.email;
-		glsAddress.mobile = contactPerson.mobileNumber;
-		glsAddress.phone = contactPerson.phoneNumber;
+		let contact = new Object();
+		contact.name = contactPerson.name;
+		contact.email = contactPerson.email;
+		contact.phoneNumber = contactPerson.mobileNumber;
+		bringAddress.contact = contact;
 	} 
-	glsAddress.name1 = address.addressee;
-	glsAddress.street1 = address.streetNameAndNumber;
-	glsAddress.zipCode = address.postalCode;
-	glsAddress.city = address.cityTownOrVillage;
-	return glsAddress;
+	bringAddress.name = address.addressee;
+	bringAddress.addressLine = address.streetNameAndNumber;
+	bringAddress.addressLine2 = address.districtOrCityArea;
+	bringAddress.city = address.cityTownOrVillage;
+	bringAddress.countryCode = address.countryCode;
+	bringAddress.postalCode = address.postalCode;
+	bringAddress.reference = reference;
+	bringAddress.additionalAddressInfo = notes;
+	return bringAddress;
 }
 
 /**
@@ -62,6 +67,7 @@ exports.initializer = async (input, context) => {
 		    let setup = new Object();
 		    setup.apiKey = '292a7cc5-7f3d-4ed7-80fd-692885415bf9';
 		    setup.apiUid = 'lmp@thetis-ims.com';
+		    setup.testIndicator = true;
 			let dataDocument = new Object();
 			dataDocument.BringTransport = setup;
 			carrier.dataDocument = JSON.stringify(dataDocument);
@@ -123,12 +129,13 @@ async function getIMS() {
 	return cachedIMS;
 }
 
-async function getBring() {
+async function getBring(setup) {
  
-    const url = "https://api.gls.dk/ws/DK/V1/";
+    const url = "https://api.bring.com/booking-api/api/";
     
     var bring = axios.create({
 		baseURL: url,
+		headers: { 'X-Mybring-API-Key': setup.apiKey, 'X-Mybring-API-Uid': setup.apiUid, 'X-Bring-Client-URL': 'https://public.thetis-ims.com' },
 		validateStatus: function (status) {
 		    return status >= 200 && status < 300 || status == 400 || status == 500; // default
 		}
@@ -168,44 +175,80 @@ function lookupCarrier(carriers, carrierName) {
 
 async function book(ims, detail) {
 	
-	let bring = await getBring();
-
 	let shipmentId = detail.shipmentId;
 	let contextId = detail.contextId;
 	
     let response = await ims.get("shipments/" + shipmentId);
     let shipment = response.data;
     
+    response = await ims.get("contexts/" + contextId);
+	let context = response.data;    
+    
     response = await ims.get("carriers");
-    var carriers = response.data;
+    let carriers = response.data;
     
     let carrier = lookupCarrier(carriers, 'Bring');
-    var dataDocument = JSON.parse(carrier.dataDocument);
-    var setup = dataDocument.BringTransport;
+    let dataDocument = JSON.parse(carrier.dataDocument);
+    let setup = dataDocument.BringTransport;
     
-	let bringRequest = new Object();
+	let bring = await getBring(setup);
+
+	let booking = new Object();
+	booking.consignments = [];
 	
-	let i = 1;
+	let consignment = new Object();
+	
+	let recipient = createBringAddress(shipment.deliveryAddress, shipment.contactPerson, shipment.notesOnDelivery, shipment.customersReference);
+	
+	let sender = createBringAddress(context.address, context.contactPerson, null, shipment.ourReference);
+	
+	let consignee = recipient;
+	
+	let consignor = sender;
+	
+	consignment.parties = { consignee, consignor, recipient, sender };
+	
 	let parcels = [];
 	let shippingContainers = shipment.shippingContainers;
 	shippingContainers.forEach(function(shippingContainer) {
 		let parcel = new Object();
-		
-		
+		parcel.weightInKg = shippingContainer.grossWeight;
+		let dimensions = shippingContainer.dimensions;
+		parcel.dimensions = { heightInCm: dimensions.height * 100, 
+				lengthInCm: dimensions.length * 100, 
+				widthInCm: dimensions.width * 100 };
 		parcels.push(parcel);
-		i++;
 	});
 	
-	bringRequest.parcels = parcels;
+	consignment.packages = parcels;
+	
+	let product = new Object();
+	product.id = shipment.termsOfDelivery;
+	product.incotermRule = shipment.incoterms;
+	product.customerNumber = '6';
+	consignment.product = product;
 
-    response = await gls.post("booking", bringRequest);
+	consignment.shippingDateTime = Date.now();
+
+	booking.consignments.push(consignment);
+	
+	booking.schemaVersion = 1;
+	booking.testIndicator = setup.testIndicator;
+	
+	console.log(JSON.stringify(booking));
+
+    response = await bring.post("booking", booking);
 
 	if (response.status == 400) {
-		
+
+		let messageText = '';		
 		let errorResponse = response.data;
-		let messageText = errorResponse.Message + ' ';
-		for (let field in errorResponse.ModelState) {
-			messageText = messageText + errorResponse.ModelState[field] + ' ';
+		for (let consignment of errorResponse.consignments) {
+			for (let error of consignment.errors) {
+				for (let message of error.messages) {
+					messageText = messageText + message.message + ' ';
+				}
+			}
 		}
 		
 		let message = new Object();
@@ -238,7 +281,8 @@ async function book(ims, detail) {
     let bringResponse = response.data;
     
     console.log(JSON.stringify(bringResponse));
-    
+
+	/*    
 	parcels = bringResponse.Parcels;
 	for (let i = 0; i < parcels.length; i++) {
 		let shippingContainer = shippingContainers[i];
@@ -250,6 +294,9 @@ async function book(ims, detail) {
 	await ims.patch("shipments/" + detail.shipmentId, { carriersShipmentNumber: bringResponse.ConsignmentId });
 
 	return { base64EncodedContent: bringResponse.PDF, fileName: "SHIPPING_LABEL_" + detail.documentId + ".pdf" };
+	*/
+	
+	return null;
 }
 
 exports.bookingHandler = async (event, context) => {
@@ -260,17 +307,18 @@ exports.bookingHandler = async (event, context) => {
 
 	let ims = await getIMS();
 
-	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
+//	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
 	
     let label = await book(ims, detail);
-    
+  
+/*    
     if (label != null) {
 		await ims.post('/documents/' + detail.documentId + '/attachments', label);
 		await ims.patch('/documents/' + detail.documentId, { workStatus: 'DONE' });
     } else {
 		await ims.patch('/documents/' + detail.documentId, { workStatus: 'FAILED' });
     }
-    
+*/    
 	return "done";
 	
 };
