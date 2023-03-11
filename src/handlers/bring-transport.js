@@ -16,9 +16,6 @@
 
 const axios = require('axios');
 
-var AWS = require('aws-sdk');
-AWS.config.update({region:'eu-west-1'});
-
 function createBringAddress(address, contactPerson, notes, reference) {
 	let bringAddress = new Object(); 
 	if (contactPerson != null) {
@@ -198,6 +195,8 @@ async function book(ims, detail) {
 	
 	let consignment = new Object();
 	
+	consignment.correlationId = shipment.shipmentNumber;
+	
 	let recipient = createBringAddress(shipment.deliveryAddress, shipment.contactPerson, shipment.notesOnDelivery, shipment.customersReference);
 	
 	let sender = createBringAddress(context.address, context.contactPerson, null, shipment.ourReference);
@@ -210,22 +209,23 @@ async function book(ims, detail) {
 	
 	let parcels = [];
 	let shippingContainers = shipment.shippingContainers;
-	shippingContainers.forEach(function(shippingContainer) {
+	for (let shippingContainer of shippingContainers) {
 		let parcel = new Object();
 		parcel.weightInKg = shippingContainer.grossWeight;
 		let dimensions = shippingContainer.dimensions;
 		parcel.dimensions = { heightInCm: dimensions.height * 100, 
 				lengthInCm: dimensions.length * 100, 
 				widthInCm: dimensions.width * 100 };
+		parcel.correlationId = shippingContainer.id;
 		parcels.push(parcel);
-	});
+	}
 	
 	consignment.packages = parcels;
 	
 	let product = new Object();
 	product.id = shipment.termsOfDelivery;
 	product.incotermRule = shipment.incoterms;
-	product.customerNumber = '6';
+	product.customerNumber = setup.customerNumber;
 	consignment.product = product;
 
 	consignment.shippingDateTime = Date.now();
@@ -280,23 +280,25 @@ async function book(ims, detail) {
 
     let bringResponse = response.data;
     
+    
+    
     console.log(JSON.stringify(bringResponse));
-
-	/*    
-	parcels = bringResponse.Parcels;
-	for (let i = 0; i < parcels.length; i++) {
-		let shippingContainer = shippingContainers[i];
-		let parcel = parcels[i];
-		let trackingUrl = 'https://gls-group.eu/DK/da/find-pakke?txtAction=71000&match=' + parcel.ParcelNumber;
-		await ims.patch("shippingContainers/" + shippingContainer.id, { trackingNumber: parcel.ParcelNumber, trackingUrl: trackingUrl });
+    
+    let confirmation = bringResponse.consignments[0].confirmation;
+    let trackingUrl = confirmation.links.tracking;
+	parcels = confirmation.packages;
+	for (let parcel of parcels) {
+		for (let shippingContainer of shippingContainers) {
+			if (shippingContainer.id == parcel.correlationId) {
+				let trackingUrl = parcel.packageNumber;
+				await ims.patch("shippingContainers/" + shippingContainer.id, { trackingNumber: parcel.packageNumber, trackingUrl: trackingUrl });
+			}
+		}
 	}
 
-	await ims.patch("shipments/" + detail.shipmentId, { carriersShipmentNumber: bringResponse.ConsignmentId });
+	await ims.patch("shipments/" + detail.shipmentId, { carriersShipmentNumber: confirmation.consignmentNumber });
 
-	return { base64EncodedContent: bringResponse.PDF, fileName: "SHIPPING_LABEL_" + detail.documentId + ".pdf" };
-	*/
-	
-	return null;
+	return { presignedUrl: confirmation.links.labels, fileName: "SHIPPING_LABEL_" + detail.documentId + ".pdf" };
 }
 
 exports.bookingHandler = async (event, context) => {
@@ -307,18 +309,18 @@ exports.bookingHandler = async (event, context) => {
 
 	let ims = await getIMS();
 
-//	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
+	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
 	
     let label = await book(ims, detail);
   
-/*    
+    
     if (label != null) {
 		await ims.post('/documents/' + detail.documentId + '/attachments', label);
 		await ims.patch('/documents/' + detail.documentId, { workStatus: 'DONE' });
     } else {
 		await ims.patch('/documents/' + detail.documentId, { workStatus: 'FAILED' });
     }
-*/    
+    
 	return "done";
 	
 };

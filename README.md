@@ -17,6 +17,7 @@ In the data document of the carrier named 'Bring':
   "BringTransport": {
     "apiKey": "292a7cc5-7f3d-4ed7-80fd-692885415bf9",
     "apiUid": "lmp@thetis-ims.com",
+    "customerNumber": "6",
     "testIndicator": true
   }
 }
@@ -27,6 +28,11 @@ For your convenience the application is initially configured to use our test acc
 To get your own credentials contact Bring.
 
 # Shipment options
+
+#### termsOfDelivery
+
+This field must contain the 
+
 
 # Events
 
