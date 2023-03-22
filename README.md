@@ -17,7 +17,7 @@ In the data document of the carrier named 'Bring':
   "BringTransport": {
     "apiKey": "292a7cc5-7f3d-4ed7-80fd-692885415bf9",
     "apiUid": "lmp@thetis-ims.com",
-    "customerNumber": "6",
+    "defaultCustomerNumber": "6",
     "testIndicator": true
   }
 }
@@ -31,7 +31,16 @@ To get your own credentials contact Bring.
 
 #### termsOfDelivery
 
-This field must contain the 
+This field may contain the product identification.
+
+#### Data document
+
+```
+"product": {
+  "customerNumber": "6",
+  "..."
+}
+```
 
 
 # Events
