@@ -262,7 +262,7 @@ async function book(ims, detail) {
 	product.incotermRule = shipment.incoterms;
 	product.customerNumber = setup.customerNumber;
 	for (let service of product.additionalServices) {
-		if (service.id == 'FLEX_DELIVERY') {
+		if (service.id == 'FLEX_DELIVERY' && shipment.notesOnDelivery) {
 			service.message = shipment.notesOnDelivery;
 		} else if (service.id == 'EVARSLING') {
 			service.email = recipient.contact.email;
