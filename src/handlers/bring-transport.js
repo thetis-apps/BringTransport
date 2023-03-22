@@ -16,18 +16,44 @@
 
 const axios = require('axios');
 
+function patternMatches(object, pattern) {
+	let matches = true;
+	for (let fieldName in pattern) {
+		let fieldValue = pattern[fieldName];
+		if (Array.isArray(fieldValue)) {
+			if (!pattern[fieldName].includes(object[fieldName])) {
+				matches = false;
+			}
+		} else {
+			if (!patternMatches(object[fieldName], pattern[fieldName])) {
+				matches = false;
+			}
+		}
+	}
+	return matches;
+}
+
+function findInstruction(instructions, shipment) {
+	for (let instruction of instructions) {
+		if (patternMatches(shipment, instruction.shipmentPattern)) {
+			return instruction;
+		}
+	}
+	return null;
+}
+
 function createBringAddress(address, contactPerson, notes, reference) {
 	let bringAddress = new Object(); 
 	if (contactPerson != null) {
 		let contact = new Object();
 		contact.name = contactPerson.name;
 		contact.email = contactPerson.email;
-		contact.phoneNumber = contactPerson.mobileNumber;
+		contact.phoneNumber = contactPerson.mobileNumber != null ? contactPerson.mobileNumber : contact.phoneNumber;
 		bringAddress.contact = contact;
 	} 
 	bringAddress.name = address.addressee;
 	bringAddress.addressLine = address.streetNameAndNumber;
-	bringAddress.addressLine2 = address.districtOrCityArea;
+	bringAddress.addressLine2 = address.districtOrCityArea != null ? address.districtOrCityArea : '';
 	bringAddress.city = address.cityTownOrVillage;
 	bringAddress.countryCode = address.countryCode;
 	bringAddress.postalCode = address.postalCode;
@@ -64,6 +90,7 @@ exports.initializer = async (input, context) => {
 		    let setup = new Object();
 		    setup.apiKey = '292a7cc5-7f3d-4ed7-80fd-692885415bf9';
 		    setup.apiUid = 'lmp@thetis-ims.com';
+		    setup.customerNumber = '6';
 		    setup.testIndicator = true;
 			let dataDocument = new Object();
 			dataDocument.BringTransport = setup;
@@ -177,7 +204,7 @@ async function book(ims, detail) {
 	
     let response = await ims.get("shipments/" + shipmentId);
     let shipment = response.data;
-    
+
     response = await ims.get("contexts/" + contextId);
 	let context = response.data;    
     
@@ -201,31 +228,47 @@ async function book(ims, detail) {
 	
 	let sender = createBringAddress(context.address, context.contactPerson, null, shipment.ourReference);
 	
-	let consignee = recipient;
+//	let consignee = recipient;
 	
-	let consignor = sender;
+//	let consignor = sender;
+
+	let pickupPoint;
+	if (shipment.deliverToPickUpPoint) {
+		pickupPoint = { countryCode: shipment.deliveryAddress.countryCode, id: shipment.pickUpPointId };
+	}
 	
-	consignment.parties = { consignee, consignor, recipient, sender };
+	consignment.parties = { pickupPoint, recipient, sender };
 	
 	let parcels = [];
 	let shippingContainers = shipment.shippingContainers;
 	for (let shippingContainer of shippingContainers) {
 		let parcel = new Object();
-		parcel.weightInKg = shippingContainer.grossWeight;
-		let dimensions = shippingContainer.dimensions;
-		parcel.dimensions = { heightInCm: dimensions.height * 100, 
-				lengthInCm: dimensions.length * 100, 
-				widthInCm: dimensions.width * 100 };
 		parcel.correlationId = shippingContainer.id;
+		parcel.weightInKg = shippingContainer.grossWeight != null ? shippingContainer.grossWeight : null;
+		let dimensions = shippingContainer.dimensions;
+		if (dimensions != null) {
+			parcel.dimensions = { 
+					heightInCm: dimensions.height != null ? dimensions.height * 100 : null, 
+					lengthInCm: dimensions.length != null ? dimensions.length * 100 : null, 
+					widthInCm: dimensions.width != null ? dimensions.width * 100 : null };
+		}
 		parcels.push(parcel);
 	}
 	
 	consignment.packages = parcels;
 	
-	let product = new Object();
-	product.id = shipment.termsOfDelivery;
+	let instruction = findInstruction(setup.instructions, shipment);
+	let product = instruction.product;
 	product.incotermRule = shipment.incoterms;
 	product.customerNumber = setup.customerNumber;
+	for (let service of product.additionalServices) {
+		if (service.id == 'FLEX_DELIVERY') {
+			service.message = shipment.notesOnDelivery;
+		} else if (service.id == 'EVARSLING') {
+			service.email = recipient.contact.email;
+			service.mobile = recipient.contact.phoneNumber;
+		}
+	}
 	consignment.product = product;
 
 	consignment.shippingDateTime = Date.now();
@@ -280,8 +323,6 @@ async function book(ims, detail) {
 
     let bringResponse = response.data;
     
-    
-    
     console.log(JSON.stringify(bringResponse));
     
     let confirmation = bringResponse.consignments[0].confirmation;
@@ -290,7 +331,6 @@ async function book(ims, detail) {
 	for (let parcel of parcels) {
 		for (let shippingContainer of shippingContainers) {
 			if (shippingContainer.id == parcel.correlationId) {
-				let trackingUrl = parcel.packageNumber;
 				await ims.patch("shippingContainers/" + shippingContainer.id, { trackingNumber: parcel.packageNumber, trackingUrl: trackingUrl });
 			}
 		}

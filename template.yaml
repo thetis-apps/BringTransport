@@ -5,7 +5,7 @@
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/format-version-structure.html
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  Integration to the carrier GLS
+  Integration to the carrier Bring
 
 # Transform section specifies one or more macros that AWS CloudFormation uses to process your template
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/transform-section-structure.html
@@ -23,7 +23,7 @@ Metadata:
     ReadmeUrl: README.md
     Labels: ['thetis-ims']
     HomePageUrl: https://github.com/thetis-apps/BringTransport
-    SemanticVersion: 1.0.0
+    SemanticVersion: 1.0.1
     SourceCodeUrl: https://github.com/thetis-apps/BringTransport
     
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
