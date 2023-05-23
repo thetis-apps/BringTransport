@@ -197,7 +197,40 @@ function lookupCarrier(carriers, carrierName) {
 	return carriers[i];
 }
 
-async function book(ims, detail) {
+/**
+ * Send an event message to Thetis IMS
+ */
+async function sendEventMessage(ims, detail, text) {
+	let message = new Object();
+	message.time = Date.now();
+	message.source = "BringTransport";
+	message.messageType = "ERROR";
+	message.messageText = text;
+	message.deviceName = detail.deviceName;
+	message.userId = detail.userId;
+	await ims.post("events/" + detail.eventId + "/messages", message);
+}
+
+/**
+ * Register the handling of this transport booking failed
+ */
+async function fail(ims, detail, text) {
+	await sendEventMessage(ims, detail, text);	
+	await ims.patch('/documents/' + detail.documentId, { workStatus: 'FAILED' });
+}
+
+/**
+ * Book transport for a shipment
+ */ 
+exports.bookingHandler = async (event, x) => {
+
+    console.info(JSON.stringify(event));
+
+    var detail = event.detail;
+
+	let ims = await getIMS();
+
+	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
 	
 	let shipmentId = detail.shipmentId;
 	let contextId = detail.contextId;
@@ -258,6 +291,11 @@ async function book(ims, detail) {
 	consignment.packages = parcels;
 	
 	let instruction = findInstruction(setup.instructions, shipment);
+	if (instruction == null) {	
+		await fail(ims, detail, "No transport instruction found matching shipment " + shipment.shipmentNumber);
+		return null;
+	}
+
 	let product = instruction.product;
 	product.incotermRule = shipment.incoterms;
 	product.customerNumber = setup.customerNumber;
@@ -278,8 +316,6 @@ async function book(ims, detail) {
 	booking.schemaVersion = 1;
 	booking.testIndicator = setup.testIndicator;
 	
-	console.log(JSON.stringify(booking));
-
     response = await bring.post("booking", booking);
 
 	if (response.status == 400) {
@@ -294,72 +330,36 @@ async function book(ims, detail) {
 			}
 		}
 		
-		let message = new Object();
-		message.time = Date.now();
-		message.source = "BringTransport";
-		message.messageType = "ERROR";
-		message.messageText = "Failed to register shipment " + shipment.shipmentNumber + " with Bring. Bring says: " + messageText;
-		message.deviceName = detail.deviceName;
-		message.userId = detail.userId;
-		await ims.post("events/" + detail.eventId + "/messages", message);
+		await fail(ims, detail, "Failed to register shipment " + shipment.shipmentNumber + " with Bring. Bring says: " + messageText);
 		
-		return null;
-		
-	} 
-	
-	if (response.status == 500) {
+	} else if (response.status < 300) {
 
-		let message = new Object();
-		message.time = Date.now();
-		message.source = "BringTransport";
-		message.messageType = "ERROR";
-		message.messageText = "Failed to register shipment " + shipment.shipmentNumber + " with Bring due to internal error on their server.";
-		message.deviceName = detail.deviceName;
-		message.userId = detail.userId;
-		await ims.post("events/" + detail.eventId + "/messages", message);
-	
-		return null;	
-	} 
-
-    let bringResponse = response.data;
-    
-    console.log(JSON.stringify(bringResponse));
-    
-    let confirmation = bringResponse.consignments[0].confirmation;
-    let trackingUrl = confirmation.links.tracking;
-	parcels = confirmation.packages;
-	for (let parcel of parcels) {
-		for (let shippingContainer of shippingContainers) {
-			if (shippingContainer.id == parcel.correlationId) {
-				await ims.patch("shippingContainers/" + shippingContainer.id, { trackingNumber: parcel.packageNumber, trackingUrl: trackingUrl });
+	    let bringResponse = response.data;
+	    
+	    let confirmation = bringResponse.consignments[0].confirmation;
+	    let trackingUrl = confirmation.links.tracking;
+		parcels = confirmation.packages;
+		for (let parcel of parcels) {
+			for (let shippingContainer of shippingContainers) {
+				if (shippingContainer.id == parcel.correlationId) {
+					await ims.patch("shippingContainers/" + shippingContainer.id, { trackingNumber: parcel.packageNumber, trackingUrl: trackingUrl });
+				}
 			}
 		}
-	}
-
-	await ims.patch("shipments/" + detail.shipmentId, { carriersShipmentNumber: confirmation.consignmentNumber });
-
-	return { presignedUrl: confirmation.links.labels, fileName: "SHIPPING_LABEL_" + detail.documentId + ".pdf" };
-}
-
-exports.bookingHandler = async (event, context) => {
-
-    console.info(JSON.stringify(event));
-
-    var detail = event.detail;
-
-	let ims = await getIMS();
-
-	await ims.patch('/documents/' + detail.documentId, { workStatus: 'ON_GOING' });
 	
-    let label = await book(ims, detail);
-  
-    
-    if (label != null) {
+		await ims.patch("shipments/" + detail.shipmentId, { carriersShipmentNumber: confirmation.consignmentNumber });
+	
+		let label = { presignedUrl: confirmation.links.labels, fileName: "SHIPPING_LABEL_" + detail.documentId + ".pdf" };
+	
 		await ims.post('/documents/' + detail.documentId + '/attachments', label);
 		await ims.patch('/documents/' + detail.documentId, { workStatus: 'DONE' });
-    } else {
-		await ims.patch('/documents/' + detail.documentId, { workStatus: 'FAILED' });
-    }
+
+	} else {
+
+		await fail(ims, detail, "Call to Bring failed with status code " + response.status + " when trying to book transport for shipment " + shipment.shipmentNumber);
+		
+	} 
+
     
 	return "done";
 	
