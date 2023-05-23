@@ -8,6 +8,8 @@ You install the application from the connection view in Thetis IMS. The name of 
 
 Upon installation the application creates a carrier by the name 'Bring'.
 
+For your convenience the application is initially configured to use our test account. You may use this configuration for test purposes. To get your own credentials you must contact Bring.
+
 # Configuration
 
 In the data document of the carrier named 'Bring':
@@ -18,30 +20,42 @@ In the data document of the carrier named 'Bring':
     "apiKey": "292a7cc5-7f3d-4ed7-80fd-692885415bf9",
     "apiUid": "lmp@thetis-ims.com",
     "defaultCustomerNumber": "6",
-    "testIndicator": true
+    "testIndicator": true,
+    "instructions": []
   }
 }
 ```
 
-For your convenience the application is initially configured to use our test account. You may use this configuration for test purposes.
-
-To get your own credentials contact Bring.
-
-# Shipment options
-
-#### termsOfDelivery
-
-This field may contain the product identification.
-
-#### Data document
+In the instructions array you must add objects similar to this:
 
 ```
-"product": {
-  "customerNumber": "6",
-  "..."
-}
+      {
+        "product": {
+          "id": "PICKUP_PARCEL",
+          "additionalServices": [
+            {
+              "id": "EVARSLING"
+            }
+          ]
+        },
+        "shipmentPattern": {
+          "deliveryAddress": {
+            "countryCode": [
+              "DK"
+            ]
+          },
+          "deliverToPickUpPoint": [
+            true
+          ]
+        }
+      },
 ```
 
+The shipment pattern designates the shipments that this instruction applies to. This example instruction applies to all shipments that must be delivered to a pick up point in Denmark.
+
+The product is a reference to Brings catalog of offered products. You must consult Brings documentation for further information.
+
+The application will use the first instruction in the array that has a pattern that matches the shipment in question.
 
 # Events
 

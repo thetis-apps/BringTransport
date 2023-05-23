@@ -92,6 +92,7 @@ exports.initializer = async (input, context) => {
 		    setup.apiUid = 'lmp@thetis-ims.com';
 		    setup.customerNumber = '6';
 		    setup.testIndicator = true;
+		    setup.instructions = [];
 			let dataDocument = new Object();
 			dataDocument.BringTransport = setup;
 			carrier.dataDocument = JSON.stringify(dataDocument);
