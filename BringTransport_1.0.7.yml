@@ -9,11 +9,11 @@ Metadata:
     Author: thetis-apps
     SpdxLicenseId: Apache-2.0
     LicenseUrl: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/4612b8d5aa75b9b9936c9b7b9e6c7e82
-    ReadmeUrl: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/a39f18634f0edf4f0b2b600926b2d5d7
+    ReadmeUrl: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/d55e70a85967fb40fd6abf84a19e3374
     Labels:
     - thetis-ims
     HomePageUrl: https://github.com/thetis-apps/BringTransport
-    SemanticVersion: 1.0.1
+    SemanticVersion: 1.0.7
     SourceCodeUrl: https://github.com/thetis-apps/BringTransport
 Globals:
   Function:
@@ -77,7 +77,7 @@ Resources:
           Fn::GetAtt:
           - DeadLetterQueue
           - Arn
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/3120f47f1233fe17bfd4dc05f202b3d1
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/75c7496646b7b37c9fdb9b9d00df0ebd
     Metadata:
       SamResourceId: BookingHandler
   InitResource:
@@ -105,7 +105,7 @@ Resources:
             Ref: ClientSecret
           ApiKey:
             Ref: ApiKey
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/3120f47f1233fe17bfd4dc05f202b3d1
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1q52gionhjeg3/75c7496646b7b37c9fdb9b9d00df0ebd
     Metadata:
       SamResourceId: InitializeFunction
   DeadLetterQueue:
@@ -114,37 +114,3 @@ Resources:
       KmsMasterKeyId: alias/aws/sqs
     Metadata:
       SamResourceId: DeadLetterQueue
-  Alarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Alarm when any message is moved to the dead letter queue.
-      AlarmActions:
-      - Ref: IncidentTopic
-      ComparisonOperator: GreaterThanThreshold
-      EvaluationPeriods: 1
-      MetricName: ApproximateNumberOfMessagesVisible
-      Period: 60
-      Namespace: AWS/SQS
-      Threshold: '0'
-      Unit: Count
-      Dimensions:
-      - Name: QueueName
-        Value:
-          Fn::GetAtt:
-          - DeadLetterQueue
-          - QueueName
-      TreatMissingData: notBreaching
-      Statistic: Maximum
-    Metadata:
-      SamResourceId: Alarm
-  IncidentTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      KmsMasterKeyId: alias/aws/sns
-      Subscription:
-      - Endpoint:
-          Ref: DevOpsEmail
-        Protocol: email
-      DisplayName: Incidents to be handled by Thetis Devops.
-    Metadata:
-      SamResourceId: IncidentTopic
